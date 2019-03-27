@@ -22,9 +22,9 @@ def reduce_loss_dict(loss_dict):
     with torch.no_grad():
         loss_names = []
         all_losses = []
-        for k, v in loss_dict.items():
+        for k in sorted(loss_dict.keys()):
             loss_names.append(k)
-            all_losses.append(v)
+            all_losses.append(loss_dict[k])
         all_losses = torch.stack(all_losses, dim=0)
         dist.reduce(all_losses, dst=0)
         if dist.get_rank() == 0:
@@ -110,7 +110,12 @@ def do_train(cfg, model,
             _save_model(logger, model, model_path)
         # Do eval when training, to trace the mAP changes and see performance improved whether or nor
         if args.eval_step > 0 and iteration % args.eval_step == 0 and not iteration == max_iter:
-            do_evaluation(cfg, model, cfg.OUTPUT_DIR, distributed=args.distributed)
+            dataset_metrics = do_evaluation(cfg, model, cfg.OUTPUT_DIR, distributed=args.distributed)
+            if summary_writer:
+                global_step = iteration
+                for dataset_name, metrics in dataset_metrics.items():
+                    for metric_name, metric_value in metrics.get_printable_metrics().items():
+                        summary_writer.add_scalar('/'.join(['val', dataset_name, metric_name]), metric_value, global_step=global_step)
             model.train()
 
     if save_to_disk:
